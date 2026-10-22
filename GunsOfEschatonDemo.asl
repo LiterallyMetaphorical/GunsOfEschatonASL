@@ -14,6 +14,12 @@ startup
 		{ "Bosses", true, "Bosses", "Splits" },
 			{ "HollowLawman",								true,	"Hollow Lawman",		"Bosses" },
 			{ "EyeAngel",									false,	"Eye Angel",			"Bosses" },
+		{ "Campfires", true, "Campfires", "Splits" },
+			{ "DesertForwardTracking_Tutorial",				true,	"Broken Fall Gulch",	"Campfires" },
+			{ "DesertForwardTracking_Tutorial_ricochet",	false,	"Muttering Path",		"Campfires" },
+			{ "DesertForwardTracking_hunter_camp",			false,	"Vantage Point",		"Campfires" },
+			{ "DesertForwardTracking_battlefield_campfire",	false,	"Pilgrim's Path",		"Campfires" },
+			{ "DesertForwardTracking_Church_campfire",		false,	"Corrupted Church",		"Campfires" },
 		{ "Cutscenes", true, "Cutscenes", "Splits" },
 			{ "DA_DesertVista_TutorialEnd",					true,	"Tutorial End",			"Cutscenes" },
 			{ "DA_WormRaisesHead",							true,	"Worm",					"Cutscenes" },
@@ -23,13 +29,14 @@ startup
 			{ "W3m_Kanati",									true,	"Burden of Choice (Rifle)",	"Weapons" },
 	{ "Debug", false, "Debug", null },
 		{ "World",					false,	"World",					"Debug" },
-		{ "PlayerController",		false,	"Player controller",		"Debug" },
-		{ "LoadingScreen",			false,	"Loading screen",			"Debug" },
-		{ "RespawnWait",			false,	"Respawn streaming wait",	"Debug" },
+		{ "PlayerController",		false,	"Player Controller",		"Debug" },
+		{ "LoadingScreen",			false,	"Loading",					"Debug" },
+		{ "RespawnWait",			false,	"Respawn",					"Debug" },
 		{ "Cutscene",				false,	"Cutscene",					"Debug" },
-		{ "RifleLooted",			false,	"Rifle looted",				"Debug" },
+		{ "RifleLooted",			false,	"Rifle Looted",				"Debug" },
 		{ "LawmanKilled",			false,	"Hollow Lawman killed",		"Debug" },
 		{ "EyeAngelKilled",			false,	"Eye Angel killed",			"Debug" },
+		{ "Campfire",				false,	"Last Campfire",			"Debug" },
 	};
 	vars.Uhara.Settings.Create(_settings);
 	#endregion
@@ -95,12 +102,10 @@ init
 	vars.Resolver["LawmanKilled"].FailAction = MemoryWatcher.ReadFailAction.SetZeroOrNull;
 	vars.Resolver.Watch<byte>("EyeAngelKilled", vars.Events.InstancePtr("BP_Script_BossBattle_EyeDemo_C", "BP_Script_BossBattle_Eye_C_UAID_60CF845F63148BFD02*"), 0x368);
 	vars.Resolver["EyeAngelKilled"].FailAction = MemoryWatcher.ReadFailAction.SetZeroOrNull;
-
-	// Quest events are commented out everywhere: unreliable. Needs more testing.
-	// World.GameState(1B0) -> QuestEvents_OnlineSyncComponent(330) -> ReplicatedQuestEvents.Items data(1C0), Num(1C8); 0x14 per item, tag FName at C
-	//vars.Resolver.Watch<ulong>("QuestItems", vars.Utils.GWorld, 0x1B0, 0x330, 0x1C0);
-	//vars.Resolver.Watch<int>("QuestCount", vars.Utils.GWorld, 0x1B0, 0x330, 0x1C8);
-	//vars.Resolver["QuestCount"].FailAction = MemoryWatcher.ReadFailAction.SetZeroOrNull;
+	// GameEngine.GameInstance(1248) -> subsystem map(108), entry 14 (158) is DG_SaveGameSubsystem -> WorldSaveGameObject(50) -> KnownCheckPointRows data(B0), Num(B8)
+	// DG_SaveGame.KnownCheckPointRows(B0) gets a campfire row added the first time it gets used
+	vars.Resolver.Watch<ulong>("KnownRows", vars.Utils.GEngine, 0x1248, 0x108, 0x158, 0x50, 0xB0);
+	vars.Resolver.Watch<int>("KnownCount", vars.Utils.GEngine, 0x1248, 0x108, 0x158, 0x50, 0xB8);
 
 	#region Text Component
 	vars.SetTextIfEnabled = (Action<string, object>)((text1, text2) =>
@@ -113,6 +118,7 @@ init
 	current.World = "";
 	current.PC = "";
 	current.Cutscene = "";
+	current.Campfire = "";
 }
 
 update
@@ -124,9 +130,7 @@ update
 	var pc = vars.Utils.FNameToString((uint)(current.PCFName & 0xFFFFFFFF));
 	if (!string.IsNullOrEmpty(pc) && pc != "None") current.PC = pc;
 	current.Cutscene = current.World == "Demo_Persist_WP" ? vars.Utils.FNameToString((uint)(current.CutsceneFName & 0xFFFFFFFF)) ?? "" : "None";
-	
-	//if (current.QuestCount > 0 && current.QuestCount != old.QuestCount)
-	//	current.Quest = vars.Utils.FNameToString(game.ReadValue<uint>((IntPtr)(long)(current.QuestItems + (ulong)(current.QuestCount * 0x14 - 8)))) ?? "";
+	current.Campfire = current.KnownCount > 0 ? vars.Utils.FNameToString(game.ReadValue<uint>((IntPtr)(long)(current.KnownRows + (ulong)(current.KnownCount * 8 - 8)))) ?? "" : "None";
 
 	#region Debug Prints
 	if (settings["Debug"])
@@ -139,6 +143,7 @@ update
 		if (old.RifleLooted != current.RifleLooted)                      { vars.SetTextIfEnabled("RifleLooted", current.RifleLooted);             print("RifleLooted? " + current.RifleLooted); }
 		if (old.LawmanKilled != current.LawmanKilled)                    { vars.SetTextIfEnabled("LawmanKilled", current.LawmanKilled);           print("LawmanKilled? " + current.LawmanKilled); }
 		if (old.EyeAngelKilled != current.EyeAngelKilled)                { vars.SetTextIfEnabled("EyeAngelKilled", current.EyeAngelKilled);       print("EyeAngelKilled? " + current.EyeAngelKilled); }
+		if (old.Campfire != current.Campfire)                            { vars.SetTextIfEnabled("Campfire", current.Campfire);                   print("Campfire? " + current.Campfire); }
 	}
 	#endregion
 }
@@ -165,6 +170,7 @@ split
 	if (current.World != "Demo_Persist_WP") return false;
 	var keys = new List<string>();
 	if (old.Cutscene != current.Cutscene && current.Cutscene != "None") keys.Add(current.Cutscene);
+	if (current.KnownCount > old.KnownCount) keys.Add(current.Campfire);
 	if (old.RifleLooted == 0 && current.RifleLooted == 1) keys.Add("W3m_Kanati");
 	if (old.LawmanKilled == 0 && current.LawmanKilled == 1) keys.Add("HollowLawman");
 	if (old.EyeAngelKilled == 0 && current.EyeAngelKilled == 1) keys.Add("EyeAngel");
